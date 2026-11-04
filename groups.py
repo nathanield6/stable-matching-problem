@@ -8,12 +8,12 @@ class Person:
         return self.id
     def get_ranking(self, id):
         return self.ranking[id]
+    def get_all_rankings(self):
+        return self.ranking
 
 def create_person(id, size):
-    arr = [0] * size
-    for i in range(size):
-        arr[i] = random.sample(range (0, size),size)  # Assuming you want to assign random rankings
-    return Person(id, arr)
+    # Each index is a person in the other group; rank 0 is best.
+    return Person(id, random.sample(range(size), size))
 
 class group:
     def __init__(self, size,people):

@@ -1,4 +1,4 @@
-#TODO: write bad algorithm
+from itertools import permutations
 from groups import *
 
 
@@ -13,31 +13,35 @@ def check_list(test_list,group1,group2):
             guy = group1.get_member(test_list[i][0])
             girl = group2.get_member(test_list[j][1])
             if i != j:
-                
+                guyList = guy.get_all_rankings()
+                girlList = girl.get_all_rankings()
+                if guyList[test_list[j][1]] < guyList[test_list[i][1]] and girlList[test_list[i][0]] < girlList[test_list[j][0]]:
+                    return False
+
+    return True
 
 
 def find_matches(group1:group, group2:group):
-    pairings = list[list(int,int)*group2.get_size()]
-    counter = 0
-    testList = list(set()*group2.get_size())
-    for i in range(0,group1.get_size()):
-        for j in range(0,group2.get_size()):
-            if j not in testList[counter]:
-                pairings[counter].append(i,j)
-                testList[counter].add(j)
-                counter = counter +1
+    if group1.get_size() != group2.get_size():
+        raise ValueError("Groups must have equal sizes")
 
-    for option in pairings:
-        if check_list(option,group1, group2):
-            return option
+    for order in permutations(range(group2.get_size())):
+        pairing = list(enumerate(order))
+        if check_list(pairing, group1, group2):
+            return pairing
+
+    return None
         
 
 
 if __name__ == "__main__":
     print("Group 1 Members:")
     for member in group1.get_members():
-        print(f"ID: {member.get_id()}, Ranking: {member.get_ranking(member.get_id())}")
+        print(f"ID: {member.get_id()}, Rankings: {member.get_all_rankings()}")
 
     print("\nGroup 2 Members:")
     for member in group2.get_members():
-        print(f"ID: {member.get_id()}, Ranking: {member.get_ranking(member.get_id())}")
+        print(f"ID: {member.get_id()}, Rankings: {member.get_all_rankings()}")
+
+    print("\nFirst stable matching:")
+    print(find_matches(group1, group2))
