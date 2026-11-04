@@ -16,9 +16,9 @@ def gale_shapely(men, women):
     free_men = deque(men)
     matches = {}
 
-    # Rankings store ranks by ID, so sort IDs from best to worst.
+    # IDs are already ordered from first choice to last choice.
     preferences = {
-        man_id: sorted(women, key=man.get_ranking)
+        man_id: man.get_all_rankings()
         for man_id, man in men.items()
     }
     next_proposal = {man_id: 0 for man_id in men}
@@ -47,11 +47,11 @@ if __name__ == "__main__":
     group1 = create_group(5)
     group2 = create_group(5)
 
-    print("Group 1 Members (rank 0 is best):")
+    print("Group 1 Members (IDs from first choice to last):")
     for member in group1.get_members():
         print(f"ID: {member.get_id()}, Rankings: {member.get_all_rankings()}")
 
-    print("\nGroup 2 Members (rank 0 is best):")
+    print("\nGroup 2 Members (IDs from first choice to last):")
     for member in group2.get_members():
         print(f"ID: {member.get_id()}, Rankings: {member.get_all_rankings()}")
 

@@ -7,12 +7,13 @@ class Person:
     def get_id(self):
         return self.id
     def get_ranking(self, id):
-        return self.ranking[id]
+        # The position of an ID is its rank; position 0 is first choice.
+        return self.ranking.index(id)
     def get_all_rankings(self):
         return self.ranking
 
 def create_person(id, size):
-    # Each index is a person in the other group; rank 0 is best.
+    # IDs are ordered from first choice to last choice.
     return Person(id, random.sample(range(size), size))
 
 class group:

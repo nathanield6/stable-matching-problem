@@ -13,9 +13,8 @@ def check_list(test_list,group1,group2):
             guy = group1.get_member(test_list[i][0])
             girl = group2.get_member(test_list[j][1])
             if i != j:
-                guyList = guy.get_all_rankings()
-                girlList = girl.get_all_rankings()
-                if guyList[test_list[j][1]] < guyList[test_list[i][1]] and girlList[test_list[i][0]] < girlList[test_list[j][0]]:
+                if (guy.get_ranking(test_list[j][1]) < guy.get_ranking(test_list[i][1])
+                        and girl.get_ranking(test_list[i][0]) < girl.get_ranking(test_list[j][0])):
                     return False
 
     return True
@@ -35,11 +34,11 @@ def find_matches(group1:group, group2:group):
 
 
 if __name__ == "__main__":
-    print("Group 1 Members:")
+    print("Group 1 Members (IDs from first choice to last):")
     for member in group1.get_members():
         print(f"ID: {member.get_id()}, Rankings: {member.get_all_rankings()}")
 
-    print("\nGroup 2 Members:")
+    print("\nGroup 2 Members (IDs from first choice to last):")
     for member in group2.get_members():
         print(f"ID: {member.get_id()}, Rankings: {member.get_all_rankings()}")
 
