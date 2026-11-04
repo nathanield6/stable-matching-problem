@@ -3,7 +3,7 @@ from collections import deque
 from groups import create_group, group
 
 
-def gale_shapely(men, women):
+def gale_shapley(men, women):
     """Accept groups or ID-to-Person dictionaries; return {woman_id: man_id}."""
     if isinstance(men, group):
         men = {person.get_id(): person for person in men.get_members()}
@@ -56,5 +56,5 @@ if __name__ == "__main__":
         print(f"ID: {member.get_id()}, Rankings: {member.get_all_rankings()}")
 
     print("\nStable matching (Group 1 -> Group 2):")
-    for woman_id, man_id in gale_shapely(group1, group2).items():
+    for woman_id, man_id in gale_shapley(group1, group2).items():
         print(f"{man_id} -> {woman_id}")
