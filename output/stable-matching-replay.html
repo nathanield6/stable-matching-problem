@@ -81,6 +81,7 @@
     .reject { color: var(--reject); }
     .connection.candidate, .connection.reject { stroke-dasharray: 5 5; }
     .connection.proposal { stroke-dasharray: 1; animation: draw-proposal .42s ease-out both; }
+    [data-playing="true"] .connection.proposal { animation-duration: .12s; }
     .decision-x { stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
     .decision-background { fill: Canvas; }
     @keyframes draw-proposal { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
@@ -113,6 +114,7 @@
     <div class="viz-row">
       <button type="button" class="btn" data-move="-1">Previous</button>
       <button type="button" class="btn btn-primary" data-move="1">Next</button>
+      <button type="button" class="btn" data-fast-forward>Fast forward</button>
       <button type="button" class="btn" data-new-run>New random run</button>
     </div>
   </div>
@@ -348,6 +350,7 @@
   const groupSize = root.querySelector('[data-group-size]');
   const previous = root.querySelector('[data-move="-1"]');
   const next = root.querySelector('[data-move="1"]');
+  const fastForward = root.querySelector('[data-fast-forward]');
   const newRun = root.querySelector('[data-new-run]');
   const runMessage = root.querySelector('[data-run-message]');
   const queuePanel = root.querySelector('[data-queue]');
@@ -362,6 +365,7 @@
   ];
   const person = (side, id) => names[side][id];
   const steps = { gale: 0, brute: 0 };
+  let playbackTimer;
   let anchors = [];
 
   // Gale–Shapley starts unmatched, then shows each proposal and its decision.
@@ -521,6 +525,7 @@
 
     previous.disabled = steps[key] === 0;
     next.disabled = steps[key] === last;
+    fastForward.disabled = next.disabled;
 
     root.querySelector('[data-left-heading]').textContent = key === 'gale' ? 'Guys · Proposers' : 'Guys';
     root.querySelector('[data-legend]').innerHTML = key === 'gale'
@@ -552,6 +557,7 @@
   }
 
   async function startNewRun() {
+    stopPlayback();
     runMessage.hidden = false;
     if (location.protocol === 'file:') {
       runMessage.textContent = 'Run python visualize_matching.py in the project terminal to open the live replay.';
@@ -587,14 +593,45 @@
   groupSize.addEventListener('change', startNewRun);
   newRun.addEventListener('click', startNewRun);
 
+  function stopPlayback() {
+    clearInterval(playbackTimer);
+    playbackTimer = undefined;
+    root.dataset.playing = 'false';
+    fastForward.textContent = 'Fast forward';
+  }
+
+  fastForward.addEventListener('click', () => {
+    if (playbackTimer !== undefined) {
+      stopPlayback();
+      return;
+    }
+
+    const { key, last } = currentStep();
+    if (steps[key] === last) return;
+    root.dataset.playing = 'true';
+    fastForward.textContent = 'Pause';
+    playbackTimer = setInterval(() => {
+      steps[key]++;
+      render();
+      if (steps[key] === last) {
+        stopPlayback();
+        if (document.activeElement === fastForward) previous.focus();
+      }
+    }, key === 'gale' ? 180 : 80);
+  });
+
   [previous, next].forEach(button => button.addEventListener('click', () => {
+    stopPlayback();
     const { key, last } = currentStep();
     const position = steps[key] + Number(button.dataset.move);
     if (position >= 0 && position <= last) steps[key] = position;
     render();
     if (button.disabled) (button === next ? previous : next).focus();
   }));
-  select.addEventListener('change', render);
+  select.addEventListener('change', () => {
+    stopPlayback();
+    render();
+  });
   groupSize.value = String(run.preferences[0].length);
   renderPreferences();
   render();
