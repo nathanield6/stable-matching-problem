@@ -6,8 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from brute_force_visualization import find_matches
-from gale_shapley_visualization import gale_shapley
+from .brute_force_visualization import find_matches
+from .gale_shapley_visualization import gale_shapley
 from groups import create_group
 
 
@@ -64,7 +64,8 @@ class ReplayHandler(BaseHTTPRequestHandler):
         self.send_content(data, "application/json")
 
 
-if __name__ == "__main__":
+def main():
+    """Start the local replay server and open it in the browser."""
     with ThreadingHTTPServer(("127.0.0.1", 0), ReplayHandler) as server:
         url = f"http://127.0.0.1:{server.server_port}/"
         print(f"Open {url} in your browser. Keep this terminal running.", flush=True)
@@ -73,3 +74,7 @@ if __name__ == "__main__":
             server.serve_forever()
         except KeyboardInterrupt:
             pass
+
+
+if __name__ == "__main__":
+    main()
