@@ -25,12 +25,16 @@ def gale_shapley(men, women, *, on_proposal=None):
         for man_id, man in men.items()
     }
     next_proposal = {man_id: 0 for man_id in men}
+    # Precompute ranks so each proposal comparison takes constant time.
+    women_ranks = {
+        woman_id: {man_id: rank for rank, man_id in enumerate(woman.get_all_rankings())}
+        for woman_id, woman in women.items()
+    }
 
     while free_men:
         man_id = free_men.popleft()
         woman_id = preferences[man_id][next_proposal[man_id]]
         next_proposal[man_id] += 1
-        woman = women[woman_id]
 
         current_man_id = matches.get(woman_id)
         ranks = None
@@ -38,7 +42,7 @@ def gale_shapley(men, women, *, on_proposal=None):
             matches[woman_id] = man_id
             status = "Accepted"
         else:
-            ranks = (woman.get_ranking(man_id), woman.get_ranking(current_man_id))
+            ranks = (women_ranks[woman_id][man_id], women_ranks[woman_id][current_man_id])
             if ranks[0] < ranks[1]:
                 # Her previous partner continues with his next proposal.
                 matches[woman_id] = man_id
