@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stable matching replay</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --font-size-base: 1rem;
+      --match: light-dark(#167443, #63dc9d);
+      --reject: light-dark(#b52a34, #ff8890);
+      --proposal: light-dark(#315da8, #98baff);
+      --candidate: light-dark(#655084, #cdb7ed);
+      --card: light-dark(#f5f7fa, #222831);
+      --border: light-dark(#d8dee7, #414c5c);
+      font: 16px/1.5 system-ui, sans-serif;
+    }
+    body { margin: 0; padding: clamp(1rem, 5vw, 3rem); }
+    #matching-replay { max-width: 62rem; margin-inline: auto; }
+    h2, p { margin: 0; }
+    .viz-controls, .viz-row { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
+    .form-label { display: grid; gap: .25rem; }
+    .btn, .form-select { font: inherit; padding: .35rem .65rem; border-radius: .35rem; }
+    .btn-primary:enabled { background: var(--match); color: Canvas; }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .text-small { font-size: .875rem; }
+    .proposal-queue {
+      padding: .65rem .8rem;
+      border: 1px solid var(--border);
+      border-radius: .55rem;
+    }
+    .queue-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+      list-style: none;
+      margin: .4rem 0 0;
+      padding: 0;
+    }
+    .queue-list li {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: .35rem;
+      padding: .15rem .45rem;
+    }
+    .queue-list li:first-child { border-color: var(--proposal); }
+    .queue-list li[data-returned] { border-color: var(--reject); }
+    .queue-list:empty, [data-queue-detail]:empty { display: none; }
+    [data-queue-detail] { margin-top: .4rem; }
+    .column-headings, .people-board {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(3.5rem, 26%) minmax(0, 1fr);
+    }
+    .column-headings strong:last-child, [data-people="1"] { grid-column: 3; }
+    .column-headings strong:last-child { text-align: right; }
+    .people-board { position: relative; align-items: start; }
+    .people-column { display: grid; gap: .55rem; }
+    .person {
+      position: relative;
+      padding: .55rem .7rem;
+      border: 1px solid var(--border);
+      border-radius: .55rem;
+      background: var(--card);
+    }
+    .person small { font-weight: 400; }
+    .rankings { display: flex; flex-wrap: wrap; column-gap: .6rem; }
+    .rankings span { white-space: nowrap; }
+    .rankings b { font-weight: 500; }
+    .anchor {
+      position: absolute; top: 50%; width: .5rem; height: .5rem;
+      transform: translateY(-50%); border-radius: 50%; background: currentColor;
+    }
+    [data-people="0"] .anchor { right: -.25rem; }
+    [data-people="1"] .anchor { left: -.25rem; }
+    .connections { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .connection { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
+    .match { color: var(--match); }
+    .proposal { color: var(--proposal); }
+    .candidate { color: var(--candidate); }
+    .reject { color: var(--reject); }
+    .connection.candidate, .connection.reject { stroke-dasharray: 5 5; }
+    .connection.proposal { stroke-dasharray: 1; animation: draw-proposal .42s ease-out both; }
+    .decision-x { stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
+    .decision-background { fill: Canvas; }
+    @keyframes draw-proposal { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .connection.proposal { animation: none; }
+    }
+  </style>
+</head>
+<body>
+<section id="matching-replay">
+  <h2>Stable matching replay</h2>
+  <div class="viz-controls">
+    <label class="form-label">Algorithm
+      <select class="form-select" data-algorithm>
+        <option value="gale">Gale–Shapley</option>
+        <option value="brute">Brute force</option>
+      </select>
+    </label>
+    <label class="form-label">People per group
+      <select class="form-select" data-group-size>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4" selected>4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+      </select>
+    </label>
+    <div class="viz-row">
+      <button type="button" class="btn" data-move="-1">Previous</button>
+      <button type="button" class="btn btn-primary" data-move="1">Next</button>
+      <button type="button" class="btn" data-new-run>New random run</button>
+    </div>
+  </div>
+  <p class="text-small" data-active-size></p>
+  <p data-run-message role="status" hidden></p>
+  <div aria-live="polite" class="result">
+    <p class="tabular-nums" data-step></p>
+    <p data-reason></p>
+  </div>
+  <section class="proposal-queue" data-queue aria-labelledby="queue-heading">
+    <strong id="queue-heading">Proposal queue</strong>
+    <ol class="queue-list text-small" data-queue-list role="list"></ol>
+    <p class="text-small" data-queue-detail role="status"></p>
+  </section>
+  <div class="column-headings">
+    <strong data-left-heading>Guys · Proposers</strong>
+    <strong>Girls</strong>
+  </div>
+  <div class="people-board">
+    <div class="people-column" data-people="0"></div>
+    <div class="people-column" data-people="1"></div>
+    <svg class="connections" data-connections role="img" aria-label="Matching connections"></svg>
+  </div>
+  <p class="text-small">Rank 0 is each person’s first choice.</p>
+  <p class="text-small" data-legend></p>
+  <script type="application/json" data-run>
+    {
+      "preferences": [
+        [
+          [1, 2, 0, 3],
+          [0, 1, 2, 3],
+          [3, 0, 2, 1],
+          [0, 1, 2, 3]
+        ],
+        [
+          [3, 1, 0, 2],
+          [2, 0, 3, 1],
+          [0, 1, 3, 2],
+          [0, 2, 3, 1]
+        ]
+      ],
+      "gale": [
+        {
+          "status": "Accepted",
+          "active": [0, 1],
+          "previous": null,
+          "pairs": [
+            [0, 1]
+          ],
+          "ranks": null
+        },
+        {
+          "status": "Accepted",
+          "active": [1, 0],
+          "previous": null,
+          "pairs": [
+            [0, 1],
+            [1, 0]
+          ],
+          "ranks": null
+        },
+        {
+          "status": "Accepted",
+          "active": [2, 3],
+          "previous": null,
+          "pairs": [
+            [0, 1],
+            [1, 0],
+            [2, 3]
+          ],
+          "ranks": null
+        },
+        {
+          "status": "Switched",
+          "active": [3, 0],
+          "previous": 1,
+          "pairs": [
+            [0, 1],
+            [2, 3],
+            [3, 0]
+          ],
+          "ranks": [0, 1]
+        },
+        {
+          "status": "Rejected",
+          "active": [1, 1],
+          "previous": 0,
+          "pairs": [
+            [0, 1],
+            [2, 3],
+            [3, 0]
+          ],
+          "ranks": [3, 1]
+        },
+        {
+          "status": "Accepted",
+          "active": [1, 2],
+          "previous": null,
+          "pairs": [
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 0]
+          ],
+          "ranks": null
+        }
+      ],
+      "brute": [
+        {
+          "status": "Unstable",
+          "active": [0, 1],
+          "pairs": [
+            [0, 0],
+            [1, 1],
+            [2, 2],
+            [3, 3]
+          ],
+          "ranks": [0, 2, 1, 3]
+        },
+        {
+          "status": "Unstable",
+          "active": [0, 1],
+          "pairs": [
+            [0, 0],
+            [1, 1],
+            [2, 3],
+            [3, 2]
+          ],
+          "ranks": [0, 2, 1, 3]
+        },
+        {
+          "status": "Unstable",
+          "active": [0, 2],
+          "pairs": [
+            [0, 0],
+            [1, 2],
+            [2, 1],
+            [3, 3]
+          ],
+          "ranks": [1, 2, 0, 1]
+        },
+        {
+          "status": "Unstable",
+          "active": [0, 2],
+          "pairs": [
+            [0, 0],
+            [1, 2],
+            [2, 3],
+            [3, 1]
+          ],
+          "ranks": [1, 2, 0, 1]
+        },
+        {
+          "status": "Unstable",
+          "active": [0, 2],
+          "pairs": [
+            [0, 0],
+            [1, 3],
+            [2, 1],
+            [3, 2]
+          ],
+          "ranks": [1, 2, 0, 2]
+        },
+        {
+          "status": "Unstable",
+          "active": [0, 2],
+          "pairs": [
+            [0, 0],
+            [1, 3],
+            [2, 2],
+            [3, 1]
+          ],
+          "ranks": [1, 2, 0, 3]
+        },
+        {
+          "status": "Unstable",
+          "active": [2, 3],
+          "pairs": [
+            [0, 1],
+            [1, 0],
+            [2, 2],
+            [3, 3]
+          ],
+          "ranks": [0, 2, 1, 2]
+        },
+        {
+          "status": "Unstable",
+          "active": [3, 0],
+          "pairs": [
+            [0, 1],
+            [1, 0],
+            [2, 3],
+            [3, 2]
+          ],
+          "ranks": [0, 2, 0, 1]
+        },
+        {
+          "status": "Unstable",
+          "active": [1, 0],
+          "pairs": [
+            [0, 1],
+            [1, 2],
+            [2, 0],
+            [3, 3]
+          ],
+          "ranks": [0, 2, 1, 3]
+        },
+        {
+          "status": "Stable",
+          "active": null,
+          "pairs": [
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 0]
+          ],
+          "ranks": null
+        }
+      ]
+    }
+  </script>
+</section>
+<style>
+#matching-replay { display: grid; gap: calc(var(--font-size-base) * .65); }
+#matching-replay .result { display: grid; gap: calc(var(--font-size-base) * .25); }
+#matching-replay [data-step] { font-weight: 500; }
+</style>
+<script>
+(() => {
+  const root = document.getElementById('matching-replay');
+  let run = JSON.parse(root.querySelector('[data-run]').textContent);
+  const select = root.querySelector('[data-algorithm]');
+  const groupSize = root.querySelector('[data-group-size]');
+  const previous = root.querySelector('[data-move="-1"]');
+  const next = root.querySelector('[data-move="1"]');
+  const newRun = root.querySelector('[data-new-run]');
+  const runMessage = root.querySelector('[data-run-message]');
+  const queuePanel = root.querySelector('[data-queue]');
+  const queueList = root.querySelector('[data-queue-list]');
+  const queueDetail = root.querySelector('[data-queue-detail]');
+  const board = root.querySelector('.people-board');
+  const connections = root.querySelector('[data-connections]');
+  const columns = Array.from(root.querySelectorAll('[data-people]'));
+  const names = [
+    ['Liam', 'Noah', 'Ethan', 'Mason', 'Lucas', 'Owen', 'Jack'],
+    ['Emma', 'Mia', 'Ava', 'Sofia', 'Isla', 'Chloe', 'Nora']
+  ];
+  const person = (side, id) => names[side][id];
+  const steps = { gale: 0, brute: 0 };
+  let anchors = [];
+
+  // Gale–Shapley starts unmatched, then shows each proposal and its decision.
+  function currentStep() {
+    const key = select.value;
+    const position = steps[key];
+    const frames = run[key];
+    if (key === 'brute') {
+      return { key, index: position, phase: 'decision', frame: frames[position], last: frames.length - 1 };
+    }
+    const index = Math.ceil(position / 2) - 1;
+    const phase = position === 0 ? 'start' : position % 2 === 1 ? 'proposal' : 'decision';
+    return { key, index, phase, frame: frames[index], last: frames.length * 2 };
+  }
+
+  function explanation(key, frame) {
+    if (key === 'gale') {
+      const [a, b] = frame.active;
+      const proposer = person(0, a);
+      const receiver = person(1, b);
+      if (frame.status === 'Accepted') {
+        return proposer + ' proposes to ' + receiver + ', who is free.';
+      }
+      const current = person(0, frame.previous);
+      const [proposerRank, currentRank] = frame.ranks;
+      const comparison = `${receiver} ranks ${proposer} at ${proposerRank} and ${current} at ${currentRank}.`;
+      const decision = frame.status === 'Switched'
+        ? `${receiver} accepts ${proposer} and drops ${current}.`
+        : `${receiver} rejects ${proposer} and keeps ${current}.`;
+      return `${comparison} ${decision}`;
+    }
+
+    if (!frame.active) {
+      return 'No blocking pair was found. This is the first stable candidate.';
+    }
+
+    const [a, b] = frame.active;
+    const [aTarget, aCurrent, bTarget, bCurrent] = frame.ranks;
+    return (
+      `${person(0, a)} and ${person(1, b)} block this candidate. ` +
+      'Each prefers the other to their assigned partner ' +
+      `(ranks ${aTarget} < ${aCurrent} and ${bTarget} < ${bCurrent}).`
+    );
+  }
+
+  function drawConnections() {
+    const { key, index, phase, frame } = currentStep();
+    const bounds = board.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+
+    const centers = anchors.map(side => side.map(anchor => {
+      const rect = anchor.getBoundingClientRect();
+      return {
+        x: rect.left - bounds.left + rect.width / 2,
+        y: rect.top - bounds.top + rect.height / 2
+      };
+    }));
+    const marks = [];
+    const descriptions = [];
+
+    function connect([a, b], style, crossedLabel = '') {
+      const left = centers[0][a];
+      const right = centers[1][b];
+      const middle = (left.x + right.x) / 2;
+      const midY = (left.y + right.y) / 2;
+      const path = `M ${left.x} ${left.y} C ${middle} ${left.y}, ${middle} ${right.y}, ${right.x} ${right.y}`;
+      const length = style === 'proposal' ? ' pathLength="1"' : '';
+      marks.push(`<path class="connection ${style}"${length} d="${path}"/>`);
+      if (crossedLabel) {
+        marks.push(`
+          <g class="reject">
+            <circle class="decision-background" cx="${middle}" cy="${midY}" r="10"/>
+            <path class="decision-x" fill="none"
+              d="M ${middle - 5} ${midY - 5} l 10 10 M ${middle + 5} ${midY - 5} l -10 10"/>
+          </g>`);
+      }
+      const labels = { match: 'Matched', proposal: 'Proposal', candidate: 'Candidate' };
+      const status = crossedLabel || labels[style];
+      descriptions.push(`${status}: ${person(0, a)} and ${person(1, b)}`);
+    }
+
+    if (key === 'gale' && phase === 'proposal') {
+      const heldPairs = run.gale[index - 1]?.pairs ?? [];
+      heldPairs.forEach(pair => connect(pair, 'match'));
+      connect(frame.active, 'proposal');
+    } else if (phase === 'decision') {
+      const pairStyle = key === 'brute' && frame.active ? 'candidate' : 'match';
+      frame.pairs.forEach(pair => connect(pair, pairStyle));
+      if (key === 'brute' && frame.active) connect(frame.active, 'reject', 'Blocking pair');
+      if (key === 'gale' && frame.status === 'Rejected') {
+        connect(frame.active, 'reject', 'Rejected proposal');
+      }
+      if (key === 'gale' && frame.status === 'Switched') {
+        connect([frame.previous, frame.active[1]], 'reject', 'Dropped match');
+      }
+    }
+
+    connections.setAttribute('aria-label', descriptions.join('. ') || 'No matching connections');
+    connections.innerHTML = marks.join('');
+  }
+
+  function renderQueue({ key, index, phase }) {
+    queuePanel.hidden = key !== 'gale';
+    if (queuePanel.hidden) return;
+
+    // Rebuild the Python FIFO queue from its recorded proposals and decisions.
+    const waiting = run.preferences[0].map((_, id) => id);
+    let returned;
+    for (let i = 0; i <= index; i++) {
+      const frame = run.gale[i];
+      const proposer = waiting.shift();
+      if (i === index && phase === 'proposal') {
+        returned = undefined;
+        break;
+      }
+      returned = frame.status === 'Rejected' ? proposer : undefined;
+      if (frame.status === 'Switched') returned = frame.previous;
+      if (returned !== undefined) waiting.push(returned);
+    }
+
+    queueList.innerHTML = waiting.map((id, position) => {
+      const nextLabel = position === 0 ? ' <strong>· Next</strong>' : '';
+      const returnedMark = id === returned ? ' data-returned' : '';
+      return `<li${returnedMark}>${person(0, id)}${nextLabel}</li>`;
+    }).join('');
+
+    if (returned !== undefined) {
+      queueDetail.textContent = `${person(0, returned)} goes to the back of the queue.`;
+    } else if (waiting.length === 0) {
+      queueDetail.textContent = phase === 'proposal' ? 'No one else is waiting.' : 'Everyone is matched.';
+    } else {
+      queueDetail.textContent = '';
+    }
+  }
+
+  function render() {
+    const { key, index, phase, frame, last } = currentStep();
+    const stepLabel = root.querySelector('[data-step]');
+    const reason = root.querySelector('[data-reason]');
+    const stepNumber = index + 1;
+    const label = key === 'gale'
+      ? `Proposal ${stepNumber}`
+      : `Candidate ${stepNumber} / ${run.brute.length}`;
+
+    if (phase === 'start') {
+      stepLabel.textContent = 'Before the first proposal';
+      reason.textContent = 'Everyone is unmatched. Click Next to see the first proposal.';
+    } else if (phase === 'proposal') {
+      const [a, b] = frame.active;
+      stepLabel.textContent = `${label} · Proposing`;
+      reason.textContent = `${person(0, a)} proposes to ${person(1, b)}.`;
+    } else {
+      const result = key === 'gale' && steps[key] === last ? ' · Final matching' : '';
+      stepLabel.textContent = `${label} · ${frame.status}${result}`;
+      reason.textContent = explanation(key, frame);
+    }
+
+    previous.disabled = steps[key] === 0;
+    next.disabled = steps[key] === last;
+
+    root.querySelector('[data-left-heading]').textContent = key === 'gale' ? 'Guys · Proposers' : 'Guys';
+    root.querySelector('[data-legend]').innerHTML = key === 'gale'
+      ? '<span class="proposal">Blue proposal</span> · <span class="match">Green match</span> · <span class="reject">Red × rejected or dropped</span>'
+      : '<span class="candidate">Dashed candidate</span> · <span class="reject">Red × blocking pair</span> · <span class="match">Green stable match</span>';
+    renderQueue({ key, index, phase });
+    drawConnections();
+  }
+
+  function renderPreferences() {
+    const size = run.preferences[0].length;
+    root.querySelector('[data-active-size]').textContent =
+      size === 1 ? 'Current run: 1 person per group.' : 'Current run: ' + size + ' people per group.';
+    anchors = columns.map((column, side) => {
+      column.innerHTML = run.preferences[side].map((ranks, id) => {
+        const preferences = ranks.map((partner, rank) =>
+          `<span><b>${rank}</b> ${person(1 - side, partner)}</span>`
+        ).join('');
+        const idLabel = (side === 0 ? 'A' : 'B') + id;
+        return `
+          <article class="person">
+            <strong>${person(side, id)} <small>(${idLabel})</small></strong>
+            <div class="rankings text-small" aria-label="Preference rankings">${preferences}</div>
+            <span class="anchor" aria-hidden="true"></span>
+          </article>`;
+      }).join('');
+      return Array.from(column.querySelectorAll('.anchor'));
+    });
+  }
+
+  async function startNewRun() {
+    runMessage.hidden = false;
+    if (location.protocol === 'file:') {
+      runMessage.textContent = 'Run python visualize_matching.py in the project terminal to open the live replay.';
+      groupSize.value = String(run.preferences[0].length);
+      return;
+    }
+    const requestedSize = groupSize.value;
+    newRun.disabled = true;
+    groupSize.disabled = true;
+    runMessage.textContent = 'Running both algorithms…';
+    try {
+      const response = await fetch('/run?size=' + requestedSize, { method: 'POST' });
+      if (!response.ok) throw new Error('New run failed');
+      const updatedRun = await response.json();
+      if (updatedRun.preferences.some(side => side.length !== Number(requestedSize))) {
+        throw new Error('Unexpected group size');
+      }
+      run = updatedRun;
+      steps.gale = 0;
+      steps.brute = 0;
+      renderPreferences();
+      render();
+      runMessage.textContent = 'New random run ready.';
+    } catch {
+      groupSize.value = String(run.preferences[0].length);
+      runMessage.textContent = 'Could not start the new run. Restart python visualize_matching.py and use the URL it prints.';
+    } finally {
+      newRun.disabled = false;
+      groupSize.disabled = false;
+    }
+  }
+
+  groupSize.addEventListener('change', startNewRun);
+  newRun.addEventListener('click', startNewRun);
+
+  [previous, next].forEach(button => button.addEventListener('click', () => {
+    const { key, last } = currentStep();
+    const position = steps[key] + Number(button.dataset.move);
+    if (position >= 0 && position <= last) steps[key] = position;
+    render();
+    if (button.disabled) (button === next ? previous : next).focus();
+  }));
+  select.addEventListener('change', render);
+  groupSize.value = String(run.preferences[0].length);
+  renderPreferences();
+  render();
+  new ResizeObserver(drawConnections).observe(board);
+})();
+</script>
+</body>
+</html>
